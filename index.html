@@ -1,47 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sales Summary ${seed}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Product Sales</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
-<body class="p-4">
+<body class="p-3">
     <div class="container">
-        <h1>Sales Summary ${seed}</h1>
-        <div id="total-sales" class="fs-3 mt-3">Loading...</div>
+        <h1 class="mb-4">Product Sales Dashboard</h1>
+
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label for="currency-picker" class="form-label">Select Currency:</label>
+                <select id="currency-picker" class="form-select"></select>
+            </div>
+            <div class="col-md-4">
+                <label for="region-filter" class="form-label">Filter by Region:</label>
+                <select id="region-filter" class="form-select">
+                    <option value="all">All Regions</option>
+                </select>
+            </div>
+        </div>
+
+        <table id="product-sales" class="table table-striped table-bordered">
+            <thead class="table-dark">
+                <tr>
+                    <th>Product</th>
+                    <th>Total Sales</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Rows added dynamically -->
+            </tbody>
+        </table>
     </div>
+
     <script>
-        async function fetchAndSumSales() {
-            try {
-                const response = await fetch('data.csv');
-                if (!response.ok) throw new Error('Failed to fetch data.csv');
-                const text = await response.text();
+        // Sample sales data structure for demonstration (can be replaced or loaded dynamically)
+        const salesData = [
+            { product: "Widget A", region: "North", salesUSD: 1500 },
+            { product: "Widget A", region: "South", salesUSD: 1200 },
+            { product: "Widget B", region: "North", salesUSD: 2100 },
+            { product: "Widget B", region: "East", salesUSD: 800 },
+            { product: "Widget C", region: "West", salesUSD: 1700 },
+            { product: "Widget C", region: "South", salesUSD: 1300 },
+            { product: "Widget D", region: "East", salesUSD: 500 },
+            { product: "Widget D", region: "West", salesUSD: 700 }
+        ];
 
-                // Parse CSV header
-                const lines = text.trim().split('\n');
-                const headers = lines[0].split(',').map(h => h.trim());
-                const salesIndex = headers.findIndex(h => h.toLowerCase() === 'sales');
-                if (salesIndex === -1) throw new Error('No sales column found');
+        let rates = {};
+        let currentCurrency = 'USD';
 
-                // Sum sales values
-                let sum = 0;
-                for(let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(',');
-                    const val = parseFloat(cols[salesIndex]);
-                    if (!isNaN(val)) {
-                        sum += val;
-                    }
+        function loadRates() {
+            fetch('rates.json')
+                .then(res => res.json())
+                .then(data => {
+                    rates = data;
+                    populateCurrencyPicker();
+                    populateRegionFilter();
+                    updateTable();
+                });
+        }
+
+        function populateCurrencyPicker() {
+            const picker = document.getElementById('currency-picker');
+            picker.innerHTML = '';
+            for (const currency in rates) {
+                const option = document.createElement('option');
+                option.value = currency;
+                option.textContent = currency;
+                picker.appendChild(option);
+            }
+            picker.value = 'USD';
+
+            picker.onchange = () => {
+                currentCurrency = picker.value;
+                updateTable();
+            };
+        }
+
+        function populateRegionFilter() {
+            const filter = document.getElementById('region-filter');
+            const regions = new Set(salesData.map(s => s.region));
+
+            // Already has 'All Regions' option by default
+            for (const region of regions) {
+                const option = document.createElement('option');
+                option.value = region;
+                option.textContent = region;
+                filter.appendChild(option);
+            }
+
+            filter.onchange = () => updateTable();
+        }
+
+        function updateTable() {
+            const tbody = document.querySelector('#product-sales tbody');
+            tbody.innerHTML = '';
+
+            const selectedRegion = document.getElementById('region-filter').value;
+
+            // Filter and aggregate sales by product
+            const productSalesMap = new Map();
+
+            for (const entry of salesData) {
+                if (selectedRegion !== 'all' && entry.region !== selectedRegion) continue;
+
+                if (!productSalesMap.has(entry.product)) {
+                    productSalesMap.set(entry.product, 0);
                 }
+                productSalesMap.set(entry.product, productSalesMap.get(entry.product) + entry.salesUSD);
+            }
 
-                document.getElementById('total-sales').textContent = sum.toLocaleString(undefined, {style:'currency', currency:'USD'});
-            } catch(e) {
-                document.getElementById('total-sales').textContent = 'Error loading sales data';
-                console.error(e);
+            // Convert USD sales to selected currency and create rows
+            for (const [product, totalUSD] of productSalesMap.entries()) {
+                const rate = rates[currentCurrency] || 1;
+                const convertedSales = totalUSD * rate;
+
+                const tr = document.createElement('tr');
+                const tdProduct = document.createElement('td');
+                tdProduct.textContent = product;
+                const tdSales = document.createElement('td');
+                tdSales.textContent = new Intl.NumberFormat('en-US', {style: 'currency', currency: currentCurrency}).format(convertedSales);
+
+                tr.appendChild(tdProduct);
+                tr.appendChild(tdSales);
+
+                tbody.appendChild(tr);
+            }
+
+            // If no products match the filter
+            if (productSalesMap.size === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 2;
+                td.classList.add('text-center');
+                td.textContent = 'No data available for selected region.';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
             }
         }
-        fetchAndSumSales();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRates();
+        });
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
